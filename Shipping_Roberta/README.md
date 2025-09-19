@@ -1,24 +1,26 @@
 # Shipping_Roberta
 
+<details>
+<summary>Project Structure</summary>
+
+```text
 Shipping_Roberta/
 ├─ dapt/
-│ └─ train_dapt.py # Domain-Adaptive Pre-Training (MLM) on maritime_corpus.csv
-│
+│  └─ train_dapt.py # Domain-Adaptive Pre-Training (MLM) on maritime_corpus.csv
 ├─ tapt/
-│ └─ train_tapt.py # Task-Adaptive Pre-Training (MLM) on News_corpus.csv,
-│ # initialized from the DAPT checkpoint
-│
+│  └─ train_tapt.py # Task-Adaptive Pre-Training (MLM) on News_corpus.csv,
+│                   # initialized from the DAPT checkpoint
 ├─ train_classifier.py # Fine-tunes the TAPT model on Annotation.csv for classification
-│
 ├─ Data/ # All input data (already cleaned)
-│ ├─ maritime_corpus.csv # Column: sentence; used for DAPT
-│ ├─ News_corpus.csv # Columns: date, url, title, text; only text is used for TAPT
-│ └─ Annotation.csv # Columns: sentence, label; used to train the classifier
-│
+│  ├─ maritime_corpus.csv # Column: sentence; used for DAPT
+│  ├─ News_corpus.csv # Columns: date, url, title, text; only text is used for TAPT
+│  └─ Annotation.csv # Columns: sentence, label; used to train the classifier
 └─ Model/ # Saved model checkpoints
-├─ dapt_model/ # Output from DAPT training (HF model + tokenizer)
-├─ tapt_model/ # Output from TAPT training (initialized from dapt_model)
-└─ classifier/ # Output from classifier fine-tuning
+   ├─ dapt_model/ # Output from DAPT training (HF model + tokenizer)
+   ├─ tapt_model/ # Output from TAPT training (initialized from dapt_model)
+   └─ classifier/ # Output from classifier fine-tuning
+```
+</details>
 
 ## Overview
 This project builds a **RoBERTa-based text classification system** for maritime and finance news.
