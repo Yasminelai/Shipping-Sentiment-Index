@@ -20,6 +20,7 @@ from transformers import (
     TrainingArguments,
     Trainer,
     set_seed,
+    EarlyStoppingCallback,
 )
 
 def get_args():
@@ -54,6 +55,18 @@ def get_args():
     # Logging
     p.add_argument("--report_to", type=str, default="none")
     p.add_argument("--run_name", type=str, default="tapt_from_dapt_news")
+    # Early stopping
+    p.add_argument("--early_stopping", action="store_true",
+                   help="Enable early stopping on validation loss")
+    p.add_argument("--early_stopping_patience", type=int, default=3,
+                   help="Number of evaluations with no improvement before stopping")
+    p.add_argument("--early_stopping_threshold", type=float, default=0.0,
+                   help="Minimum improvement in monitored metric to reset patience")
+    # Checkpoint / resume
+    p.add_argument("--resume_from_checkpoint", type=str, default=None,
+                   help="Path to a specific checkpoint to resume from (overrides auto-detect)")
+    p.add_argument("--auto_resume", action="store_true",
+                   help="Auto-detect latest checkpoint under output_dir/checkpoint-* to resume")
     return p.parse_args()
 
 def build_dataset(args, tokenizer) -> DatasetDict:
@@ -116,7 +129,7 @@ def main():
         per_device_eval_batch_size=args.per_device_eval_batch_size,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         warmup_ratio=args.warmup_ratio,
-        evaluation_strategy="steps",
+        eval_strategy="steps",
         eval_steps=args.eval_steps,
         save_steps=args.save_steps,
         save_total_limit=args.save_total_limit,
@@ -131,6 +144,13 @@ def main():
         greater_is_better=False,
     )
 
+    callbacks = []
+    if args.early_stopping:
+        callbacks.append(EarlyStoppingCallback(
+            early_stopping_patience=args.early_stopping_patience,
+            early_stopping_threshold=args.early_stopping_threshold,
+        ))
+
     trainer = Trainer(
         model=model,
         args=training_args,
@@ -138,6 +158,7 @@ def main():
         train_dataset=dsdict["train"],
         eval_dataset=dsdict["validation"],
         tokenizer=tokenizer,
+        callbacks=callbacks if callbacks else None,
     )
 
     print(">>> Evaluating before training...")
@@ -146,7 +167,23 @@ def main():
         print(f"Initial loss: {base['eval_loss']:.4f} | ppl: {perplexity(base['eval_loss']):.2f}")
 
     print(">>> Training (TAPT from DAPT)...")
-    trainer.train()
+    resume_path = None
+    if args.resume_from_checkpoint:
+        resume_path = args.resume_from_checkpoint
+    elif args.auto_resume:
+        try:
+            candidates = [d for d in os.listdir(args.output_dir) if d.startswith("checkpoint-")]
+            if candidates:
+                latest = sorted(candidates, key=lambda x: int(x.split("-")[-1]))[-1]
+                resume_path = os.path.join(args.output_dir, latest)
+        except Exception:
+            resume_path = None
+
+    if resume_path and os.path.isdir(resume_path):
+        print(f">>> Resuming from checkpoint: {resume_path}")
+        trainer.train(resume_from_checkpoint=resume_path)
+    else:
+        trainer.train()
 
     print(">>> Evaluating after training...")
     final = trainer.evaluate()

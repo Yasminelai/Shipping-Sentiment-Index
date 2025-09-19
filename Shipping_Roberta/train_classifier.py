@@ -20,6 +20,7 @@ from transformers import (
     TrainingArguments,
     Trainer,
     set_seed,
+    EarlyStoppingCallback,
 )
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 
@@ -52,7 +53,7 @@ def get_args() -> argparse.Namespace:
     parser.add_argument("--warmup_ratio", type=float, default=0.06)
     parser.add_argument("--gradient_accumulation_steps", type=int, default=1)
     parser.add_argument("--logging_steps", type=int, default=100)
-    parser.add_argument("--evaluation_strategy", type=str, default="epoch", choices=["steps", "epoch"])
+    parser.add_argument("--eval_strategy", type=str, default="epoch", choices=["steps", "epoch"])
     parser.add_argument("--save_strategy", type=str, default="epoch", choices=["steps", "epoch"])
     parser.add_argument("--save_total_limit", type=int, default=2)
     parser.add_argument("--seed", type=int, default=42)
@@ -73,6 +74,14 @@ def get_args() -> argparse.Namespace:
     # Steps (only used if strategy='steps')
     parser.add_argument("--eval_steps", type=int, default=500)
     parser.add_argument("--save_steps", type=int, default=500)
+
+    # Early stopping
+    parser.add_argument("--early_stopping", action="store_true",
+                        help="Enable early stopping on validation loss")
+    parser.add_argument("--early_stopping_patience", type=int, default=2,
+                        help="Number of evaluations with no improvement before stopping")
+    parser.add_argument("--early_stopping_threshold", type=float, default=0.0,
+                        help="Minimum improvement in monitored metric to reset patience")
 
     return parser.parse_args()
 
@@ -121,6 +130,12 @@ def build_dataset(
         return example
 
     ds = ds.map(to_label_id)
+
+    # Cast label column to ClassLabel so that stratified split is supported
+    try:
+        ds = ds.cast_column(args.label_column, class_label)
+    except Exception as e:
+        print(f"Warning: failed to cast '{args.label_column}' to ClassLabel; proceeding without cast: {e}")
 
     # Train/validation split
     split = ds.train_test_split(
@@ -230,9 +245,9 @@ def main():
         warmup_ratio=args.warmup_ratio,
 
         logging_steps=args.logging_steps,
-        evaluation_strategy=args.evaluation_strategy,
+        eval_strategy=args.eval_strategy,
         save_strategy=args.save_strategy,
-        eval_steps=None if args.evaluation_strategy == "epoch" else args.eval_steps,
+        eval_steps=None if args.eval_strategy == "epoch" else args.eval_steps,
         save_steps=None if args.save_strategy == "epoch" else args.save_steps,
         save_total_limit=args.save_total_limit,
 
@@ -248,6 +263,13 @@ def main():
         greater_is_better=False,
     )
 
+    callbacks = []
+    if args.early_stopping:
+        callbacks.append(EarlyStoppingCallback(
+            early_stopping_patience=args.early_stopping_patience,
+            early_stopping_threshold=args.early_stopping_threshold,
+        ))
+
     trainer = Trainer(
         model=model,
         args=training_args,
@@ -255,6 +277,7 @@ def main():
         eval_dataset=dsdict["validation"],
         tokenizer=tokenizer,
         compute_metrics=compute_metrics,
+        callbacks=callbacks if callbacks else None,
     )
 
     # Optional: initial evaluation

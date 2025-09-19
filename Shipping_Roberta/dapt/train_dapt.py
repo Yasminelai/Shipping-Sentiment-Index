@@ -25,6 +25,7 @@ from transformers import (
     TrainingArguments,
     Trainer,
     set_seed,
+    EarlyStoppingCallback,
 )
 
 # ------------------------------
@@ -76,6 +77,20 @@ def get_args() -> argparse.Namespace:
                         help="Reporting integration: 'none', 'wandb', 'tensorboard', etc.")
     parser.add_argument("--run_name", type=str, default="dapt_roberta_maritime",
                         help="Experiment/run name for trackers")
+
+    # Early stopping
+    parser.add_argument("--early_stopping", action="store_true",
+                        help="Enable early stopping on validation loss")
+    parser.add_argument("--early_stopping_patience", type=int, default=3,
+                        help="Number of evaluations with no improvement before stopping")
+    parser.add_argument("--early_stopping_threshold", type=float, default=0.0,
+                        help="Minimum improvement in monitored metric to reset patience")
+
+    # Checkpoint / resume
+    parser.add_argument("--resume_from_checkpoint", type=str, default=None,
+                        help="Path to a specific checkpoint to resume from (overrides auto-detect)")
+    parser.add_argument("--auto_resume", action="store_true",
+                        help="Auto-detect latest checkpoint under output_dir/checkpoint-* to resume")
 
     return parser.parse_args()
 
@@ -167,7 +182,7 @@ def main():
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         warmup_ratio=args.warmup_ratio,
 
-        evaluation_strategy="steps",
+        eval_strategy="steps",
         eval_steps=args.eval_steps,
         save_steps=args.save_steps,
         save_total_limit=args.save_total_limit,
@@ -186,6 +201,13 @@ def main():
     )
 
     # Trainer
+    callbacks = []
+    if args.early_stopping:
+        callbacks.append(EarlyStoppingCallback(
+            early_stopping_patience=args.early_stopping_patience,
+            early_stopping_threshold=args.early_stopping_threshold,
+        ))
+
     trainer = Trainer(
         model=model,
         args=training_args,
@@ -193,6 +215,7 @@ def main():
         train_dataset=dsdict["train"],
         eval_dataset=dsdict["validation"],
         tokenizer=tokenizer,
+        callbacks=callbacks if callbacks else None,
     )
 
     # Initial evaluation (Step 0 baseline)
@@ -202,9 +225,26 @@ def main():
     if base_loss is not None:
         print(f"Initial eval loss: {base_loss:.4f} | ppl: {compute_perplexity(base_loss):.2f}")
 
-    # Train
+    # Train with resume support
     print(">>> Training...")
-    trainer.train()
+    resume_path = None
+    if args.resume_from_checkpoint:
+        resume_path = args.resume_from_checkpoint
+    elif args.auto_resume:
+        # Auto-detect latest checkpoint in output_dir
+        try:
+            candidates = [d for d in os.listdir(args.output_dir) if d.startswith("checkpoint-")]
+            if candidates:
+                latest = sorted(candidates, key=lambda x: int(x.split("-")[-1]))[-1]
+                resume_path = os.path.join(args.output_dir, latest)
+        except Exception:
+            resume_path = None
+
+    if resume_path and os.path.isdir(resume_path):
+        print(f">>> Resuming from checkpoint: {resume_path}")
+        trainer.train(resume_from_checkpoint=resume_path)
+    else:
+        trainer.train()
 
     # Final evaluation
     print(">>> Evaluating after training...")
