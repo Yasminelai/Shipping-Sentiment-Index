@@ -1,0 +1,38 @@
+# Jupyter Notebook outputs
+*.ipynb_checkpoints/
+
+# Model files (too large for git)
+Model/*/checkpoint-*/
+Model/*/pytorch_model.bin
+Model/*/model.safetensors
+Model/*/optimizer.pt
+Model/*/scheduler.pt
+Model/*/rng_state.pth
+Model/*/trainer_state.json
+
+# Logs
+logs/
+*.log
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Environment
+.env
+.venv
+env/
+venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
